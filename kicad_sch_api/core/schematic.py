@@ -1665,18 +1665,41 @@ class Schematic:
         self._data["components"] = components_data
         logger.debug(f"   Synced {len(components_data)} components to _data")
 
-        # Populate lib_symbols with actual symbol definitions used by components
+        # Populate lib_symbols for the symbols actually used by components.
+        #
+        # Preserve + sync policy:
+        #   - Preserve the embedded, as-loaded definition verbatim for symbols
+        #     still in use (exact format preservation across KiCAD versions,
+        #     including custom symbols not present in the local symbol cache).
+        #   - Generate from the symbol cache only for lib_ids that are newly
+        #     added (no embedded definition exists).
+        #   - Prune definitions whose last placed component was removed, matching
+        #     KiCAD's own save behavior.
+        loaded_lib_symbols = self._data.get("lib_symbols", {}) or {}
+        used_lib_ids = {comp.lib_id for comp in self._components if comp.lib_id}
         lib_symbols = {}
         cache = get_symbol_cache()
 
-        for comp in self._components:
-            if comp.lib_id and comp.lib_id not in lib_symbols:
-                # Get the actual symbol definition
-                symbol_def = cache.get_symbol(comp.lib_id)
+        # 1. Preserve embedded definitions verbatim, in the original file order,
+        #    for symbols still in use (prunes defs whose component was removed).
+        for lib_id, symbol_sexp in loaded_lib_symbols.items():
+            if lib_id in used_lib_ids:
+                lib_symbols[lib_id] = symbol_sexp
 
-                if symbol_def:
-                    converted_symbol = self._convert_symbol_to_kicad_format(symbol_def, comp.lib_id)
-                    lib_symbols[comp.lib_id] = converted_symbol
+        # 2. Append definitions for newly added lib_ids (no embedded def) by
+        #    synthesizing them from the symbol cache.
+        for comp in self._components:
+            lib_id = comp.lib_id
+            if not lib_id or lib_id in lib_symbols:
+                continue
+            symbol_def = cache.get_symbol(lib_id)
+            if symbol_def:
+                lib_symbols[lib_id] = self._convert_symbol_to_kicad_format(symbol_def, lib_id)
+            else:
+                logger.warning(
+                    f"No embedded or cached definition for {lib_id}; "
+                    "lib_symbols entry will be omitted"
+                )
 
         self._data["lib_symbols"] = lib_symbols
 

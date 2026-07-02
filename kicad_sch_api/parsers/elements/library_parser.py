@@ -22,9 +22,37 @@ class LibraryParser(BaseElementParser):
         super().__init__("library")
 
     def _parse_lib_symbols(self, item: List[Any]) -> Dict[str, Any]:
-        """Parse lib_symbols section."""
-        # Implementation for lib_symbols parsing
-        return {}
+        """Parse the lib_symbols section.
+
+        Stores each embedded symbol definition as its raw S-expression, keyed
+        by lib_id, so it can be re-emitted verbatim on save (see
+        ``_lib_symbols_to_sexp``, which passes raw lists through unchanged).
+        This preserves the exact, as-loaded symbol graphics/pins/properties for
+        every KiCAD version instead of regenerating them from the symbol cache.
+
+        Args:
+            item: The full ``(lib_symbols (symbol "Device:R" ...) ...)`` sexp.
+
+        Returns:
+            Mapping of lib_id -> raw symbol S-expression (insertion order
+            matches the file so serialization order is preserved).
+        """
+        lib_symbols: Dict[str, Any] = {}
+        for sub_item in item[1:]:
+            if not isinstance(sub_item, list) or len(sub_item) < 2:
+                continue
+            if not (isinstance(sub_item[0], sexpdata.Symbol) and str(sub_item[0]) == "symbol"):
+                continue
+            # (symbol "Device:R" ...) -> lib_id is the first argument
+            lib_id = sub_item[1]
+            if isinstance(lib_id, sexpdata.Symbol):
+                lib_id = str(lib_id)
+            if isinstance(lib_id, str):
+                lib_symbols[lib_id] = sub_item
+            else:
+                logger.warning(f"Skipping lib_symbols entry with non-string id: {lib_id!r}")
+        logger.debug(f"Parsed {len(lib_symbols)} embedded lib_symbols definitions")
+        return lib_symbols
 
     # Conversion methods from internal format to S-expression
 
