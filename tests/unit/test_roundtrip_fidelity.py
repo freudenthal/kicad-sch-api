@@ -15,12 +15,109 @@ import sexpdata
 from kicad_sch_api.core.parser import SExpressionParser
 from kicad_sch_api.core.types import Point, SymbolInstance
 from kicad_sch_api.parsers.elements.label_parser import LabelParser
+from kicad_sch_api.parsers.elements.sheet_parser import SheetParser
 from kicad_sch_api.parsers.elements.symbol_parser import SymbolParser
 from kicad_sch_api.parsers.elements.wire_parser import WireParser
 
 
 def _tag(sexp_list):
     return [str(x[0]) for x in sexp_list if isinstance(x, list) and x]
+
+
+def _parse_symbol(sexp_str):
+    return SymbolParser()._parse_symbol(sexpdata.loads(sexp_str))
+
+
+def _sym_field(out, tag):
+    return next((x for x in out if isinstance(x, list) and str(x[0]) == tag), None)
+
+
+# --- symbol field preservation (mirror / sim flags / lib_name / autoplaced) ---
+
+
+def _roundtrip_symbol(sexp_str):
+    p = SymbolParser()
+    return p._symbol_to_sexp(p._parse_symbol(sexpdata.loads(sexp_str)), "root")
+
+
+def test_mirror_preserved():
+    out = _roundtrip_symbol(
+        '(symbol (lib_id "Device:C") (at 10 10 0) (mirror x) (unit 1) '
+        '(exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) '
+        '(uuid "11111111-1111-1111-1111-111111111111"))'
+    )
+    tags = _tag(out)
+    assert "mirror" in tags and tags.index("mirror") == tags.index("at") + 1
+    assert str(_sym_field(out, "mirror")[1]) == "x"
+
+
+def test_mirror_absent_not_emitted():
+    out = _roundtrip_symbol(
+        '(symbol (lib_id "Device:C") (at 10 10 0) (unit 1) '
+        '(uuid "11111111-1111-1111-1111-111111111111"))'
+    )
+    assert "mirror" not in _tag(out)
+
+
+def test_exclude_from_sim_and_dnp_preserved():
+    out = _roundtrip_symbol(
+        '(symbol (lib_id "Device:C") (at 10 10 0) (unit 1) '
+        '(exclude_from_sim yes) (in_bom no) (on_board yes) (dnp yes) '
+        '(uuid "11111111-1111-1111-1111-111111111111"))'
+    )
+    assert str(_sym_field(out, "exclude_from_sim")[1]) == "yes"
+    assert str(_sym_field(out, "dnp")[1]) == "yes"
+
+
+def test_lib_name_preserved_before_lib_id():
+    out = _roundtrip_symbol(
+        '(symbol (lib_name "GND_3") (lib_id "power:GND") (at 10 10 0) (unit 1) '
+        '(uuid "11111111-1111-1111-1111-111111111111"))'
+    )
+    tags = _tag(out)
+    assert tags.index("lib_name") < tags.index("lib_id")
+    assert _sym_field(out, "lib_name")[1] == "GND_3"
+
+
+def test_fields_autoplaced_only_emitted_when_true():
+    # Present + yes -> emitted
+    out_yes = _roundtrip_symbol(
+        '(symbol (lib_id "Device:C") (at 10 10 0) (unit 1) (dnp no) '
+        '(fields_autoplaced yes) (uuid "11111111-1111-1111-1111-111111111111"))'
+    )
+    assert "fields_autoplaced" in _tag(out_yes)
+    # Absent -> not emitted (KiCAD never writes "no")
+    out_absent = _roundtrip_symbol(
+        '(symbol (lib_id "Device:C") (at 10 10 0) (unit 1) (dnp no) '
+        '(uuid "11111111-1111-1111-1111-111111111111"))'
+    )
+    assert "fields_autoplaced" not in _tag(out_absent)
+
+
+# --- sheet preservation ---------------------------------------------------
+
+
+def test_sheet_property_and_fill_preserved():
+    sheet_sexp = sexpdata.loads(
+        '(sheet (at 100 100) (size 20 20) '
+        '(stroke (width 0.1524) (type solid)) (fill (color 0 0 0 0)) '
+        '(uuid "22222222-2222-2222-2222-222222222222") '
+        '(property "Sheetname" "Sub" (at 100 99 0) (show_name no) '
+        '(do_not_autoplace no) (effects (font (size 1.27 1.27)))) '
+        '(property "Sheetfile" "sub.kicad_sch" (at 100 121 0) '
+        '(effects (font (size 1.27 1.27)))))'
+    )
+    p = SheetParser()
+    out = p._sheet_to_sexp(p._parse_sheet(sheet_sexp), "root")
+    fill = _sym_field(out, "fill")
+    color = next(x for x in fill if isinstance(x, list) and str(x[0]) == "color")
+    assert color[4] == 0 and isinstance(color[4], int)  # not 0.0000
+    name_prop = next(
+        x for x in out if isinstance(x, list) and str(x[0]) == "property" and x[1] == "Sheetname"
+    )
+    # KiCAD 10 fields preserved on the property
+    assert any(isinstance(e, list) and str(e[0]) == "show_name" for e in name_prop)
+    assert any(isinstance(e, list) and str(e[0]) == "do_not_autoplace" for e in name_prop)
 
 
 # --- instances grouping ---------------------------------------------------

@@ -151,11 +151,14 @@ class LabelParser(BaseElementParser):
         x, y = pos["x"], pos["y"]
         rotation = label_data.get("rotation", 0)
 
-        # Format coordinates properly
+        # Format coordinates properly (whole numbers as integers, so "0" not
+        # "0.0000" — applies to rotation as well).
         if isinstance(x, float) and x.is_integer():
             x = int(x)
         if isinstance(y, float) and y.is_integer():
             y = int(y)
+        if isinstance(rotation, float) and rotation.is_integer():
+            rotation = int(rotation)
 
         sexp.append([sexpdata.Symbol("at"), x, y, rotation])
 

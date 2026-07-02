@@ -94,6 +94,10 @@ class SheetParser(BaseElementParser):
                         sheet_data["name"] = prop_value
                     elif prop_name == "Sheetfile":
                         sheet_data["filename"] = prop_value
+                    # Preserve the raw property S-expression so it can be
+                    # re-emitted verbatim (keeps KiCAD 10 fields such as
+                    # show_name / do_not_autoplace and the exact position).
+                    sheet_data[f"__sexp_{prop_name}"] = elem
             elif elem_type == "pin":
                 # Parse sheet pin - reuse existing _parse_sheet_pin helper
                 pin_data = self._parse_sheet_pin_for_read(elem)
@@ -237,8 +241,12 @@ class SheetParser(BaseElementParser):
         stroke_sexp.append([sexpdata.Symbol("type"), sexpdata.Symbol(stroke_type)])
         sexp.append(stroke_sexp)
 
-        # Add fill
+        # Add fill. KiCAD writes whole-number color channels as integers
+        # ("0", not "0.0000"), so collapse integral floats before formatting.
         fill_color = sheet_data.get("fill_color", (0, 0, 0, 0.0))
+        fill_color = [
+            int(c) if isinstance(c, float) and c.is_integer() else c for c in fill_color
+        ]
         fill_sexp = [sexpdata.Symbol("fill")]
         fill_sexp.append(
             [sexpdata.Symbol("color"), fill_color[0], fill_color[1], fill_color[2], fill_color[3]]
@@ -253,40 +261,62 @@ class SheetParser(BaseElementParser):
         name = sheet_data.get("name", "Sheet")
         filename = sheet_data.get("filename", "sheet.kicad_sch")
 
-        # Sheetname property
+        # Sheetname property. Reuse the exact property parsed from the file
+        # (preserving KiCAD 10 fields and position) when available, updating
+        # only the value; otherwise build a default (newly added sheets).
         from ...core.config import config
 
-        name_prop = [sexpdata.Symbol("property"), "Sheetname", name]
-        name_prop.append(
-            [sexpdata.Symbol("at"), x, round(y + config.sheet.name_offset_y, 4), 0]
-        )  # Above sheet
-        name_prop.append(
-            [
-                sexpdata.Symbol("effects"),
+        preserved_name = sheet_data.get("__sexp_Sheetname")
+        if preserved_name:
+            name_prop = list(preserved_name)
+            if len(name_prop) >= 3:
+                name_prop[2] = name
+        else:
+            name_prop = [sexpdata.Symbol("property"), "Sheetname", name]
+            name_prop.append(
+                [sexpdata.Symbol("at"), x, round(y + config.sheet.name_offset_y, 4), 0]
+            )  # Above sheet
+            name_prop.append(
                 [
-                    sexpdata.Symbol("font"),
-                    [sexpdata.Symbol("size"), config.defaults.font_size, config.defaults.font_size],
-                ],
-                [sexpdata.Symbol("justify"), sexpdata.Symbol("left"), sexpdata.Symbol("bottom")],
-            ]
-        )
+                    sexpdata.Symbol("effects"),
+                    [
+                        sexpdata.Symbol("font"),
+                        [
+                            sexpdata.Symbol("size"),
+                            config.defaults.font_size,
+                            config.defaults.font_size,
+                        ],
+                    ],
+                    [sexpdata.Symbol("justify"), sexpdata.Symbol("left"), sexpdata.Symbol("bottom")],
+                ]
+            )
         sexp.append(name_prop)
 
-        # Sheetfile property
-        file_prop = [sexpdata.Symbol("property"), "Sheetfile", filename]
-        file_prop.append(
-            [sexpdata.Symbol("at"), x, round(y + h + config.sheet.file_offset_y, 4), 0]
-        )  # Below sheet
-        file_prop.append(
-            [
-                sexpdata.Symbol("effects"),
+        # Sheetfile property (same preserve-or-build approach).
+        preserved_file = sheet_data.get("__sexp_Sheetfile")
+        if preserved_file:
+            file_prop = list(preserved_file)
+            if len(file_prop) >= 3:
+                file_prop[2] = filename
+        else:
+            file_prop = [sexpdata.Symbol("property"), "Sheetfile", filename]
+            file_prop.append(
+                [sexpdata.Symbol("at"), x, round(y + h + config.sheet.file_offset_y, 4), 0]
+            )  # Below sheet
+            file_prop.append(
                 [
-                    sexpdata.Symbol("font"),
-                    [sexpdata.Symbol("size"), config.defaults.font_size, config.defaults.font_size],
-                ],
-                [sexpdata.Symbol("justify"), sexpdata.Symbol("left"), sexpdata.Symbol("top")],
-            ]
-        )
+                    sexpdata.Symbol("effects"),
+                    [
+                        sexpdata.Symbol("font"),
+                        [
+                            sexpdata.Symbol("size"),
+                            config.defaults.font_size,
+                            config.defaults.font_size,
+                        ],
+                    ],
+                    [sexpdata.Symbol("justify"), sexpdata.Symbol("left"), sexpdata.Symbol("top")],
+                ]
+            )
         sexp.append(file_prop)
 
         # Add sheet pins if any
@@ -316,10 +346,14 @@ class SheetParser(BaseElementParser):
             sexpdata.Symbol(pin_data.get("pin_type", "input")),
         ]
 
-        # Add position
+        # Add position. Whole-number coordinates/rotation as integers
+        # ("0", not "0.0000").
         pos = pin_data["position"]
         x, y = pos["x"], pos["y"]
         rotation = pin_data.get("rotation", 0)
+        x, y, rotation = (
+            int(v) if isinstance(v, float) and v.is_integer() else v for v in (x, y, rotation)
+        )
         pin_sexp.append([sexpdata.Symbol("at"), x, y, rotation])
 
         # Add UUID

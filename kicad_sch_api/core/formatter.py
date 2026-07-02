@@ -74,6 +74,7 @@ class ExactFormatter:
 
         # Component elements
         self.rules["lib_id"] = FormatRule(inline=True, quote_indices={1})
+        self.rules["lib_name"] = FormatRule(inline=True, quote_indices={1})
         self.rules["at"] = FormatRule(inline=True)
         self.rules["unit"] = FormatRule(inline=True)
         self.rules["exclude_from_sim"] = FormatRule(inline=True)

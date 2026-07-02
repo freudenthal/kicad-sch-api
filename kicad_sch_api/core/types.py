@@ -222,6 +222,14 @@ class SchematicSymbol:
     on_board: bool = True
     fields_autoplaced: bool = False
     unit: int = 1
+    # Standard simulation/DNP flags (KiCAD 7+), preserved rather than hardcoded.
+    exclude_from_sim: bool = False
+    dnp: bool = False
+    # Mirror axis "x"/"y"; None when not mirrored.
+    mirror: Optional[str] = None
+    # Optional (lib_name "...") preceding lib_id for renamed/derived library
+    # definitions; None when absent.
+    lib_name: Optional[str] = None
     # DeMorgan/alternate body style. KiCAD 10 (schema 20260306+) writes
     # (body_style N) on every placed symbol; earlier versions omit it. None
     # means "absent in source" so it is only re-emitted when originally present.

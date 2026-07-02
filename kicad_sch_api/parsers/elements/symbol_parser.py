@@ -29,6 +29,17 @@ class SymbolParser(BaseElementParser):
         try:
             symbol_data = {
                 "lib_id": None,
+                # Optional (lib_name "...") preceding lib_id for symbols whose
+                # library definition was renamed/derived (e.g. "GND_3"). None
+                # when absent so it is only re-emitted when present.
+                "lib_name": None,
+                # Standard simulation/DNP flags (present in KiCAD 7+). Parsed and
+                # preserved rather than hardcoded.
+                "exclude_from_sim": False,
+                "dnp": False,
+                # Mirror axis "(mirror x|y)"; None when the symbol is not
+                # mirrored, so it is only re-emitted when present.
+                "mirror": None,
                 "position": Point(0, 0),
                 "rotation": 0,
                 "uuid": None,
@@ -65,6 +76,16 @@ class SymbolParser(BaseElementParser):
 
                 if element_type == "lib_id":
                     symbol_data["lib_id"] = sub_item[1] if len(sub_item) > 1 else None
+                elif element_type == "lib_name":
+                    symbol_data["lib_name"] = sub_item[1] if len(sub_item) > 1 else None
+                elif element_type == "exclude_from_sim":
+                    symbol_data["exclude_from_sim"] = parse_bool_property(
+                        sub_item[1] if len(sub_item) > 1 else None, default=False
+                    )
+                elif element_type == "dnp":
+                    symbol_data["dnp"] = parse_bool_property(
+                        sub_item[1] if len(sub_item) > 1 else None, default=False
+                    )
                 elif element_type == "at":
                     if len(sub_item) >= 3:
                         symbol_data["position"] = Point(float(sub_item[1]), float(sub_item[2]))
@@ -72,6 +93,8 @@ class SymbolParser(BaseElementParser):
                             symbol_data["rotation"] = float(sub_item[3])
                 elif element_type == "uuid":
                     symbol_data["uuid"] = sub_item[1] if len(sub_item) > 1 else None
+                elif element_type == "mirror":
+                    symbol_data["mirror"] = str(sub_item[1]) if len(sub_item) > 1 else None
                 elif element_type == "unit":
                     # Parse unit number for multi-unit components
                     symbol_data["unit"] = int(sub_item[1]) if len(sub_item) > 1 else 1
@@ -412,6 +435,10 @@ class SymbolParser(BaseElementParser):
         """Convert symbol to S-expression."""
         sexp = [sexpdata.Symbol("symbol")]
 
+        # lib_name (when present) precedes lib_id in KiCAD's format.
+        if symbol_data.get("lib_name"):
+            sexp.append([sexpdata.Symbol("lib_name"), symbol_data["lib_name"]])
+
         if symbol_data.get("lib_id"):
             sexp.append([sexpdata.Symbol("lib_id"), symbol_data["lib_id"]])
 
@@ -425,6 +452,11 @@ class SymbolParser(BaseElementParser):
         # Always include rotation for format consistency with KiCAD
         sexp.append([sexpdata.Symbol("at"), x, y, r])
 
+        # Add mirror (after at, before unit) when the symbol is mirrored.
+        mirror = symbol_data.get("mirror")
+        if mirror:
+            sexp.append([sexpdata.Symbol("mirror"), sexpdata.Symbol(mirror)])
+
         # Add unit (required by KiCAD)
         unit = symbol_data.get("unit", 1)
         sexp.append([sexpdata.Symbol("unit"), unit])
@@ -436,8 +468,14 @@ class SymbolParser(BaseElementParser):
         if body_style is not None:
             sexp.append([sexpdata.Symbol("body_style"), body_style])
 
-        # Add simulation and board settings (required by KiCAD)
-        sexp.append([sexpdata.Symbol("exclude_from_sim"), "no"])
+        # Add simulation and board settings (required by KiCAD). Preserve the
+        # parsed exclude_from_sim value instead of hardcoding it.
+        sexp.append(
+            [
+                sexpdata.Symbol("exclude_from_sim"),
+                "yes" if symbol_data.get("exclude_from_sim", False) else "no",
+            ]
+        )
         sexp.append([sexpdata.Symbol("in_bom"), "yes" if symbol_data.get("in_bom", True) else "no"])
         sexp.append(
             [sexpdata.Symbol("on_board"), "yes" if symbol_data.get("on_board", True) else "no"]
@@ -447,13 +485,11 @@ class SymbolParser(BaseElementParser):
         in_pos_files = symbol_data.get("in_pos_files")
         if in_pos_files is not None:
             sexp.append([sexpdata.Symbol("in_pos_files"), "yes" if in_pos_files else "no"])
-        sexp.append([sexpdata.Symbol("dnp"), "no"])
-        sexp.append(
-            [
-                sexpdata.Symbol("fields_autoplaced"),
-                "yes" if symbol_data.get("fields_autoplaced", True) else "no",
-            ]
-        )
+        sexp.append([sexpdata.Symbol("dnp"), "yes" if symbol_data.get("dnp", False) else "no"])
+        # KiCAD only writes (fields_autoplaced yes) and omits it otherwise
+        # (never "no"), so emit it only when set.
+        if symbol_data.get("fields_autoplaced", False):
+            sexp.append([sexpdata.Symbol("fields_autoplaced"), "yes"])
 
         if symbol_data.get("uuid"):
             sexp.append([sexpdata.Symbol("uuid"), symbol_data["uuid"]])
@@ -579,19 +615,20 @@ class SymbolParser(BaseElementParser):
             else:
                 actual_value = prop_value
 
-            # Determine hide state:
-            # 1. If explicitly in hidden_props -> hide
-            # 2. Else if standard property -> default to hidden
-            # 3. Else custom property -> default to visible
-            if prop_name in hidden_props:
-                should_hide = True
-            elif prop_name in STANDARD_HIDDEN_PROPS:
-                should_hide = True
-            else:
-                should_hide = False
-
             # Check if we have a preserved S-expression for this custom property
             preserved_prop = symbol_data.get("properties", {}).get(f"__sexp_{prop_name}")
+
+            # Determine hide state:
+            # - Preserved property: honor its ACTUAL parsed visibility so an
+            #   unmodified file round-trips exactly (a standard property left
+            #   visible in the file must stay visible).
+            # - Newly created property: apply the KiCad default (standard
+            #   metadata properties are hidden).
+            if preserved_prop:
+                should_hide = prop_name in hidden_props
+            else:
+                should_hide = prop_name in hidden_props or prop_name in STANDARD_HIDDEN_PROPS
+
             if preserved_prop:
                 # Use preserved format but update value and hide flag.
                 # Store the raw (unescaped) value; the S-expression writer
