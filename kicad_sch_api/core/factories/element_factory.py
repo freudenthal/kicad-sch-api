@@ -139,7 +139,9 @@ class ElementFactory:
             shape=(
                 HierarchicalLabelShape(label_dict.get("shape")) if label_dict.get("shape") else None
             ),
-            justify_h=label_dict.get("justify_h", "left"),
+            # The parser stores horizontal justification under "justify";
+            # accept either key so the value survives load -> object.
+            justify_h=label_dict.get("justify_h") or label_dict.get("justify") or "left",
             justify_v=label_dict.get("justify_v", "bottom"),
         )
 

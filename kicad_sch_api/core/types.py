@@ -226,6 +226,9 @@ class SchematicSymbol:
     # (body_style N) on every placed symbol; earlier versions omit it. None
     # means "absent in source" so it is only re-emitted when originally present.
     body_style: Optional[int] = None
+    # KiCAD 10 placement-file flag "(in_pos_files yes|no)"; None when absent
+    # (KiCAD <= 9) so it is only re-emitted when originally present.
+    in_pos_files: Optional[bool] = None
     instances: List["SymbolInstance"] = field(
         default_factory=list
     )  # FIX: Add instances field for hierarchical support

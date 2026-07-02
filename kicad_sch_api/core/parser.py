@@ -358,31 +358,23 @@ class SExpressionParser:
         lib_symbols = schematic_data.get("lib_symbols", {})
         sexp_data.append(self._lib_symbols_to_sexp(lib_symbols))
 
-        # Add components
-        for component in schematic_data.get("components", []):
-            sexp_data.append(self._symbol_to_sexp(component, schematic_data.get("uuid")))
+        # Emit elements in KiCAD's canonical save order so that unmodified files
+        # round-trip without reordering: junctions, no_connects, wires, graphical
+        # items, text/labels, then symbols, then sheets.
 
-        # Add wires
-        for wire in schematic_data.get("wires", []):
-            sexp_data.append(self._wire_to_sexp(wire))
-
-        # Add junctions
+        # Junctions
         for junction in schematic_data.get("junctions", []):
             sexp_data.append(self._junction_to_sexp(junction))
 
-        # Add labels
-        for label in schematic_data.get("labels", []):
-            sexp_data.append(self._label_to_sexp(label))
-
-        # Add hierarchical labels
-        for hlabel in schematic_data.get("hierarchical_labels", []):
-            sexp_data.append(self._hierarchical_label_to_sexp(hlabel))
-
-        # Add no_connects
+        # No-connects
         for no_connect in schematic_data.get("no_connects", []):
             sexp_data.append(self._no_connect_to_sexp(no_connect))
 
-        # Add graphical elements (in KiCad element order)
+        # Wires
+        for wire in schematic_data.get("wires", []):
+            sexp_data.append(self._wire_to_sexp(wire))
+
+        # Graphical elements (in KiCad element order)
         # Beziers
         for bezier in schematic_data.get("beziers", []):
             sexp_data.append(self._bezier_to_sexp(bezier))
@@ -416,6 +408,18 @@ class SExpressionParser:
         # Text boxes
         for text_box in schematic_data.get("text_boxes", []):
             sexp_data.append(self._text_box_to_sexp(text_box))
+
+        # Labels
+        for label in schematic_data.get("labels", []):
+            sexp_data.append(self._label_to_sexp(label))
+
+        # Hierarchical labels
+        for hlabel in schematic_data.get("hierarchical_labels", []):
+            sexp_data.append(self._hierarchical_label_to_sexp(hlabel))
+
+        # Symbols (components) - after text/labels, before sheets
+        for component in schematic_data.get("components", []):
+            sexp_data.append(self._symbol_to_sexp(component, schematic_data.get("uuid")))
 
         # Hierarchical sheets
         for sheet in schematic_data.get("sheets", []):

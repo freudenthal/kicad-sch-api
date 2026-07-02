@@ -48,6 +48,10 @@ class SymbolParser(BaseElementParser):
                 # do not. Default None so it is only re-emitted when the source
                 # file actually contained it (exact round-trip for all versions).
                 "body_style": None,
+                # KiCAD 10 "(in_pos_files yes|no)" placement-file flag; absent in
+                # KiCAD <= 9. None means absent so it is only re-emitted when
+                # the source file contained it.
+                "in_pos_files": None,
                 "instances": [],
             }
 
@@ -107,6 +111,10 @@ class SymbolParser(BaseElementParser):
                     symbol_data["on_board"] = parse_bool_property(
                         sub_item[1] if len(sub_item) > 1 else None, default=True
                     )
+                elif element_type == "in_pos_files":
+                    symbol_data["in_pos_files"] = parse_bool_property(
+                        sub_item[1] if len(sub_item) > 1 else None, default=True
+                    )
                 elif element_type == "fields_autoplaced":
                     symbol_data["fields_autoplaced"] = parse_bool_property(
                         sub_item[1] if len(sub_item) > 1 else None, default=True
@@ -135,9 +143,18 @@ class SymbolParser(BaseElementParser):
         """
         Update the hide flag in a property S-expression.
 
+        The hide flag moved between KiCAD versions: KiCAD <= 9 nests it inside
+        the ``effects`` section, while KiCAD 10 places it as a direct child of
+        the property. This method recognizes BOTH forms so that:
+
+          - When the desired visibility already matches the loaded state, the
+            property is returned unchanged (exact byte-for-byte round-trip,
+            regardless of which form the file uses).
+          - When un-hiding, any hide flag is removed from either location.
+
         Args:
             property_sexp: Property S-expression list
-            should_hide: True to add (hide yes), False to remove hide flag
+            should_hide: True to ensure the property is hidden, False to show it
 
         Returns:
             Updated property S-expression
@@ -145,41 +162,49 @@ class SymbolParser(BaseElementParser):
         # Make a copy to avoid modifying original
         prop = list(property_sexp)
 
-        # Find effects section
+        # Locate a direct-child (hide ...) (KiCAD 10) and the effects section.
+        direct_hide_index = None
         effects_index = None
         for i, item in enumerate(prop):
-            if isinstance(item, list) and len(item) > 0:
-                if isinstance(item[0], sexpdata.Symbol) and str(item[0]) == "effects":
+            if isinstance(item, list) and len(item) > 0 and isinstance(item[0], sexpdata.Symbol):
+                tag = str(item[0])
+                if tag == "hide" and direct_hide_index is None:
+                    direct_hide_index = i
+                elif tag == "effects" and effects_index is None:
                     effects_index = i
-                    break
 
-        if effects_index is None:
-            # No effects section - if we need to hide, we'd need to create one
-            # For now, just return as-is (this shouldn't happen with valid KiCAD files)
+        # Locate an effects-nested (hide ...) (KiCAD <= 9).
+        effects = list(prop[effects_index]) if effects_index is not None else None
+        effects_hide_index = None
+        if effects is not None:
+            for i, item in enumerate(effects):
+                if isinstance(item, list) and len(item) > 0:
+                    if isinstance(item[0], sexpdata.Symbol) and str(item[0]) == "hide":
+                        effects_hide_index = i
+                        break
+
+        currently_hidden = direct_hide_index is not None or effects_hide_index is not None
+
+        # Desired state already matches: preserve the exact as-loaded format.
+        if should_hide == currently_hidden:
             return prop
 
-        # Get effects section
-        effects = list(prop[effects_index])
-
-        # Find hide clause within effects
-        hide_index = None
-        for i, item in enumerate(effects):
-            if isinstance(item, list) and len(item) > 0:
-                if isinstance(item[0], sexpdata.Symbol) and str(item[0]) == "hide":
-                    hide_index = i
-                    break
-
         if should_hide:
-            # Add hide flag if not present
-            if hide_index is None:
+            # Add a hide flag. Prefer the effects-nested form to match the
+            # historical behavior for newly created properties; fall back to a
+            # direct-child flag when there is no effects section.
+            if effects is not None:
                 effects.append([sexpdata.Symbol("hide"), sexpdata.Symbol("yes")])
+                prop[effects_index] = effects
+            else:
+                prop.append([sexpdata.Symbol("hide"), sexpdata.Symbol("yes")])
         else:
-            # Remove hide flag if present
-            if hide_index is not None:
-                effects.pop(hide_index)
-
-        # Update effects in property
-        prop[effects_index] = effects
+            # Remove the hide flag from wherever it appears.
+            if effects_hide_index is not None:
+                effects.pop(effects_hide_index)
+                prop[effects_index] = effects
+            if direct_hide_index is not None:
+                prop.pop(direct_hide_index)
 
         return prop
 
@@ -220,6 +245,14 @@ class SymbolParser(BaseElementParser):
                     y = float(sub_item[2])
                     rotation = float(sub_item[3]) if len(sub_item) > 3 else 0.0
                     position = [x, y, rotation]
+
+            elif element_type == "hide":
+                # KiCAD 10: (hide yes) as a direct child of the property
+                # (KiCAD <= 9 nests it inside effects, handled below).
+                if len(sub_item) > 1:
+                    is_hidden = str(sub_item[1]).lower() in ["yes", "true"]
+                else:
+                    is_hidden = True
 
             elif element_type == "effects":
                 # Parse effects section
@@ -409,6 +442,11 @@ class SymbolParser(BaseElementParser):
         sexp.append(
             [sexpdata.Symbol("on_board"), "yes" if symbol_data.get("on_board", True) else "no"]
         )
+        # in_pos_files (KiCAD 10) is emitted between on_board and dnp, and only
+        # when the source contained it, so KiCAD <= 9 files are not modified.
+        in_pos_files = symbol_data.get("in_pos_files")
+        if in_pos_files is not None:
+            sexp.append([sexpdata.Symbol("in_pos_files"), "yes" if in_pos_files else "no"])
         sexp.append([sexpdata.Symbol("dnp"), "no"])
         sexp.append(
             [
@@ -460,7 +498,7 @@ class SymbolParser(BaseElementParser):
                 )
                 sexp.append(ref_prop)
 
-        if symbol_data.get("value"):
+        if symbol_data.get("value") is not None:  # Include empty strings, skip only None
             # Check for preserved S-expression
             preserved_val = symbol_data.get("properties", {}).get("__sexp_Value")
             if preserved_val:
@@ -555,12 +593,13 @@ class SymbolParser(BaseElementParser):
             # Check if we have a preserved S-expression for this custom property
             preserved_prop = symbol_data.get("properties", {}).get(f"__sexp_{prop_name}")
             if preserved_prop:
-                # Use preserved format but update value and hide flag
+                # Use preserved format but update value and hide flag.
+                # Store the raw (unescaped) value; the S-expression writer
+                # escapes quotes on output. Manually escaping here as well would
+                # double-escape (\" -> \\").
                 prop = list(preserved_prop)
                 if len(prop) >= 3:
-                    # Re-escape quotes when saving
-                    escaped_value = str(actual_value).replace('"', '\\"')
-                    prop[2] = escaped_value
+                    prop[2] = str(actual_value)
 
                 # Update hide flag based on hidden_properties set
                 prop = self._update_property_hide_flag(prop, should_hide)
@@ -602,8 +641,13 @@ class SymbolParser(BaseElementParser):
             logger.debug(
                 f"🔍 HIERARCHICAL FIX: Component {symbol_data.get('reference')} has {len(user_instances)} user-set instance(s)"
             )
-            # Build instances sexp from user data
+            # Build instances sexp from user data. KiCAD groups all paths of a
+            # given project under a SINGLE (project "name" ...) block, so we
+            # group instances by project name (preserving first-seen project
+            # order and path order within each project) rather than emitting one
+            # (project ...) wrapper per path.
             instances_sexp = [sexpdata.Symbol("instances")]
+            projects: "dict[str, List[Any]]" = {}
             for inst in user_instances:
                 # Handle both SymbolInstance objects and dicts for backward compatibility
                 if hasattr(inst, "project"):  # SymbolInstance object
@@ -621,18 +665,19 @@ class SymbolParser(BaseElementParser):
                     f"   Instance: project={project}, path={path}, ref={reference}, unit={unit}"
                 )
 
-                instances_sexp.append(
+                projects.setdefault(project, []).append(
                     [
-                        sexpdata.Symbol("project"),
-                        project,
-                        [
-                            sexpdata.Symbol("path"),
-                            path,  # PRESERVE user-set hierarchical path!
-                            [sexpdata.Symbol("reference"), reference],
-                            [sexpdata.Symbol("unit"), unit],
-                        ],
+                        sexpdata.Symbol("path"),
+                        path,  # PRESERVE user-set hierarchical path!
+                        [sexpdata.Symbol("reference"), reference],
+                        [sexpdata.Symbol("unit"), unit],
                     ]
                 )
+
+            for project, path_sexps in projects.items():
+                project_sexp = [sexpdata.Symbol("project"), project]
+                project_sexp.extend(path_sexps)
+                instances_sexp.append(project_sexp)
             sexp.append(instances_sexp)
         else:
             # No user-set instances - generate default (backward compatibility)

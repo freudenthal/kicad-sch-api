@@ -113,6 +113,15 @@ class Schematic:
         ]
         self._components = ComponentCollection(component_symbols, parent_schematic=self)
 
+        # Record the lib_ids that had placed components at load time. Used when
+        # syncing lib_symbols on save to prune only definitions whose last
+        # component was removed, while preserving "shipped extra" definitions
+        # that never corresponded to a placed component (e.g. generator-derived
+        # power symbols named "GND_1" that no component lib_id matches).
+        self._loaded_component_lib_ids = {
+            comp.lib_id for comp in self._components if comp.lib_id
+        }
+
         # Initialize wire collection
         wire_data = self._data.get("wires", [])
         wires = ElementFactory.create_wires_from_list(wire_data)
@@ -1680,17 +1689,27 @@ class Schematic:
         lib_symbols = {}
         cache = get_symbol_cache()
 
-        # 1. Preserve embedded definitions verbatim, in the original file order,
-        #    for symbols still in use (prunes defs whose component was removed).
+        # 1. Preserve embedded definitions verbatim, in the original file order.
+        #    Keep an entry if it is still used, OR if it never corresponded to a
+        #    placed component at load time (a "shipped extra" the file carried,
+        #    e.g. generator-derived power symbols like "GND_1"). Only definitions
+        #    whose last placed component was removed are pruned.
+        loaded_component_lib_ids = getattr(self, "_loaded_component_lib_ids", set())
         for lib_id, symbol_sexp in loaded_lib_symbols.items():
-            if lib_id in used_lib_ids:
+            if lib_id in used_lib_ids or lib_id not in loaded_component_lib_ids:
                 lib_symbols[lib_id] = symbol_sexp
 
-        # 2. Append definitions for newly added lib_ids (no embedded def) by
-        #    synthesizing them from the symbol cache.
+        # 2. Append definitions for newly added lib_ids by synthesizing them
+        #    from the symbol cache. Only components ADDED after load are
+        #    synthesized: a component present at load whose lib_id has no
+        #    matching lib_symbol was referenced by the file under a different
+        #    name (a generator quirk, e.g. lib_id "power:GND" defined as
+        #    "GND_1"), so fabricating a def here would add spurious content.
         for comp in self._components:
             lib_id = comp.lib_id
             if not lib_id or lib_id in lib_symbols:
+                continue
+            if lib_id in loaded_component_lib_ids:
                 continue
             symbol_def = cache.get_symbol(lib_id)
             if symbol_def:
@@ -1703,8 +1722,11 @@ class Schematic:
 
         self._data["lib_symbols"] = lib_symbols
 
-        # Update sheet instances
-        if not self._data["sheet_instances"]:
+        # Update sheet instances. Only synthesize a default root sheet_instances
+        # for schematics created from scratch. A file loaded without one is a
+        # hierarchical sub-sheet (only the root schematic carries
+        # sheet_instances), so preserve its absence on round-trip.
+        if not self._data["sheet_instances"] and not self._original_content:
             self._data["sheet_instances"] = [{"path": "/", "page": "1"}]
 
         # Remove symbol_instances section - instances are stored within each symbol in lib_symbols
@@ -1796,6 +1818,14 @@ class Schematic:
                 "rotation": hlabel_element.rotation,
                 "size": hlabel_element.size,
             }
+            # Preserve shape and justification (stored on the underlying Label
+            # dataclass) so they round-trip.
+            label = getattr(hlabel_element, "_data", None)
+            if label is not None:
+                hlabel_dict["justify"] = getattr(label, "justify_h", "left")
+                shape = getattr(label, "shape", None)
+                if shape is not None:
+                    hlabel_dict["shape"] = shape.value if hasattr(shape, "value") else shape
             hierarchical_label_data.append(hlabel_dict)
 
         self._data["hierarchical_labels"] = hierarchical_label_data

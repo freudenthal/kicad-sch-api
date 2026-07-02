@@ -187,10 +187,14 @@ class LabelParser(BaseElementParser):
         shape = hlabel_data.get("shape", "input")
         sexp.append([sexpdata.Symbol("shape"), sexpdata.Symbol(shape)])
 
-        # Add position
+        # Add position. KiCAD writes whole-number coordinates/rotation as
+        # integers ("0", not "0.0000"), so collapse integral floats.
         pos = hlabel_data["position"]
         x, y = pos["x"], pos["y"]
         rotation = hlabel_data.get("rotation", 0)
+        x, y, rotation = (
+            int(v) if isinstance(v, float) and v.is_integer() else v for v in (x, y, rotation)
+        )
         sexp.append([sexpdata.Symbol("at"), x, y, rotation])
 
         # Add effects (font properties)

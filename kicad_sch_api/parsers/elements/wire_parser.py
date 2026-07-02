@@ -195,8 +195,11 @@ class WireParser(BaseElementParser):
 
         sexp.append([sexpdata.Symbol("at"), x, y])
 
-        # Add diameter
+        # Add diameter. KiCAD writes a whole-number diameter as an integer
+        # ("0", not "0.0000"), so collapse integral floats before formatting.
         diameter = junction_data.get("diameter", 0)
+        if isinstance(diameter, float) and diameter.is_integer():
+            diameter = int(diameter)
         sexp.append([sexpdata.Symbol("diameter"), diameter])
 
         # Add color (RGBA)
