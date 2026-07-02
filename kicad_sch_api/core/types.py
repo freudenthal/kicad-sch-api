@@ -222,6 +222,10 @@ class SchematicSymbol:
     on_board: bool = True
     fields_autoplaced: bool = False
     unit: int = 1
+    # DeMorgan/alternate body style. KiCAD 10 (schema 20260306+) writes
+    # (body_style N) on every placed symbol; earlier versions omit it. None
+    # means "absent in source" so it is only re-emitted when originally present.
+    body_style: Optional[int] = None
     instances: List["SymbolInstance"] = field(
         default_factory=list
     )  # FIX: Add instances field for hierarchical support

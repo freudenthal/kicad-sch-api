@@ -43,6 +43,11 @@ class SymbolParser(BaseElementParser):
                 "on_board": True,
                 "fields_autoplaced": False,
                 "unit": 1,  # Multi-unit component support: unit number (default 1)
+                # DeMorgan/alternate body style. KiCAD 10 (schema 20260306+)
+                # emits (body_style N) on every placed symbol; earlier versions
+                # do not. Default None so it is only re-emitted when the source
+                # file actually contained it (exact round-trip for all versions).
+                "body_style": None,
                 "instances": [],
             }
 
@@ -66,6 +71,11 @@ class SymbolParser(BaseElementParser):
                 elif element_type == "unit":
                     # Parse unit number for multi-unit components
                     symbol_data["unit"] = int(sub_item[1]) if len(sub_item) > 1 else 1
+                elif element_type == "body_style":
+                    # Parse DeMorgan/alternate body style (KiCAD 10+)
+                    symbol_data["body_style"] = (
+                        int(sub_item[1]) if len(sub_item) > 1 else 1
+                    )
                 elif element_type == "property":
                     prop_data = self._parse_property(sub_item)
                     if prop_data:
@@ -385,6 +395,13 @@ class SymbolParser(BaseElementParser):
         # Add unit (required by KiCAD)
         unit = symbol_data.get("unit", 1)
         sexp.append([sexpdata.Symbol("unit"), unit])
+
+        # Add body_style (DeMorgan/alternate representation) immediately after
+        # unit, matching KiCAD 10 ordering. Only emitted when the source file
+        # contained it, so KiCAD 8/9 files are not modified.
+        body_style = symbol_data.get("body_style")
+        if body_style is not None:
+            sexp.append([sexpdata.Symbol("body_style"), body_style])
 
         # Add simulation and board settings (required by KiCAD)
         sexp.append([sexpdata.Symbol("exclude_from_sim"), "no"])

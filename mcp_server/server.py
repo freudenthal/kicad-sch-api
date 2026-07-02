@@ -152,15 +152,20 @@ async def load_schematic(file_path: str) -> dict:
         # Count components
         component_count = len(list(schematic.components.all()))
 
+        # title_block is a plain dict in the current kicad-sch-api API
+        # (it may be empty for schematics without a title block, which is
+        # valid for any KiCad version). Fall back to the file name.
+        project_name = schematic.title_block.get("title") or path.stem
+
         logger.info(
-            f"[MCP] Loaded schematic: {schematic.title_block.title} "
+            f"[MCP] Loaded schematic: {project_name} "
             f"({component_count} components)"
         )
         return {
             "success": True,
             "message": f"Loaded schematic: {path.name}",
             "file_path": str(path),
-            "project_name": schematic.title_block.title,
+            "project_name": project_name,
             "uuid": str(schematic.uuid),
             "component_count": component_count,
         }
@@ -269,13 +274,18 @@ async def get_schematic_info() -> dict:
         components = list(schematic.components.all())
         component_refs = [c.reference for c in components]
 
+        # title_block is a plain dict; lib_symbols lives in the internal
+        # _data mapping (there is no public attribute in the current API).
+        title_block = schematic.title_block or {}
+        lib_symbols = getattr(schematic, "_data", {}).get("lib_symbols", {})
+
         info = {
             "success": True,
-            "project_name": schematic.title_block.title,
+            "project_name": title_block.get("title") or "Untitled",
             "uuid": str(schematic.uuid),
             "component_count": len(components),
             "component_references": component_refs,
-            "lib_symbols_count": len(schematic.lib_symbols),
+            "lib_symbols_count": len(lib_symbols),
         }
 
         logger.info(

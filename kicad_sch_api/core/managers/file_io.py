@@ -221,7 +221,11 @@ class FileIOManager(BaseManager):
         """
         return {
             "kicad_sch": {
-                "version": 20230819,
+                # Use the single source of truth for the default schema version
+                # (config.file_format.version_default) instead of a stale
+                # hardcoded value, so new schematics match the version emitted
+                # everywhere else in the library.
+                "version": int(config.file_format.version_default),
                 "generator": config.file_format.generator_default,
                 "uuid": None,  # Will be set by calling code
                 "paper": config.paper.default,
