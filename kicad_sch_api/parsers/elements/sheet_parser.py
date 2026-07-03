@@ -25,7 +25,7 @@ class SheetParser(BaseElementParser):
     def _parse_sheet(self, item: List[Any]) -> Optional[Dict[str, Any]]:
         """Parse a hierarchical sheet."""
         # Complex format with position, size, properties, pins, instances
-        sheet_data = {
+        sheet_data: Dict[str, Any] = {
             "position": {"x": 0, "y": 0},
             "size": {"width": 0, "height": 0},
             "exclude_from_sim": False,
@@ -244,9 +244,7 @@ class SheetParser(BaseElementParser):
         # Add fill. KiCAD writes whole-number color channels as integers
         # ("0", not "0.0000"), so collapse integral floats before formatting.
         fill_color = sheet_data.get("fill_color", (0, 0, 0, 0.0))
-        fill_color = [
-            int(c) if isinstance(c, float) and c.is_integer() else c for c in fill_color
-        ]
+        fill_color = [int(c) if isinstance(c, float) and c.is_integer() else c for c in fill_color]
         fill_sexp = [sexpdata.Symbol("fill")]
         fill_sexp.append(
             [sexpdata.Symbol("color"), fill_color[0], fill_color[1], fill_color[2], fill_color[3]]
@@ -287,7 +285,11 @@ class SheetParser(BaseElementParser):
                             config.defaults.font_size,
                         ],
                     ],
-                    [sexpdata.Symbol("justify"), sexpdata.Symbol("left"), sexpdata.Symbol("bottom")],
+                    [
+                        sexpdata.Symbol("justify"),
+                        sexpdata.Symbol("left"),
+                        sexpdata.Symbol("bottom"),
+                    ],
                 ]
             )
         sexp.append(name_prop)

@@ -118,9 +118,7 @@ class Schematic:
         # component was removed, while preserving "shipped extra" definitions
         # that never corresponded to a placed component (e.g. generator-derived
         # power symbols named "GND_1" that no component lib_id matches).
-        self._loaded_component_lib_ids = {
-            comp.lib_id for comp in self._components if comp.lib_id
-        }
+        self._loaded_component_lib_ids = {comp.lib_id for comp in self._components if comp.lib_id}
 
         # Initialize wire collection
         wire_data = self._data.get("wires", [])

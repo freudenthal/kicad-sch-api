@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **KiCAD 10 support and byte-perfect round-trip fidelity.** Loading and
+  re-saving an unmodified KiCAD 9 or 10 schematic now reproduces the file
+  exactly (verified byte-identical across an 8-sheet hierarchical KiCAD 10
+  project, including the root sheet).
+  - Embedded `lib_symbols` definitions are now parsed and preserved verbatim
+    instead of being discarded on load and regenerated from the symbol cache
+    (previously dropped custom symbols and reformatted standard ones).
+  - Top-level elements are emitted in KiCAD's canonical section order
+    (junctions, wires, graphics, labels, symbols, sheets).
+  - Symbol instances are grouped under a single `(project ...)` block per
+    project instead of one wrapper per path.
+  - Preserve KiCAD 10 symbol fields: `body_style`, `in_pos_files`, and the
+    direct-child `(hide yes)` property form (no longer duplicated).
+  - Preserve `exclude_from_sim`, `dnp`, `(mirror x|y)`, and `(lib_name "...")`
+    instead of dropping or hardcoding them; emit `(fields_autoplaced yes)` only
+    when set, matching KiCAD.
+  - Preserve hierarchical-sheet `Sheetname`/`Sheetfile` properties verbatim
+    (including `show_name`/`do_not_autoplace`) and hierarchical-label
+    `justify`/`shape`.
+  - Format whole-number coordinates, rotations, junction diameter, and fill
+    color channels as integers (`0`, not `0.0000`).
+  - Only synthesize a default `sheet_instances` for schematics created from
+    scratch, so loaded sub-sheets round-trip.
+- Fixed a crash when reading a schematic without a title block through the MCP
+  server (`'dict' object has no attribute 'title'`).
+
+### Added
+- Regression tests: `tests/unit/test_lib_symbols_preservation.py`,
+  `tests/unit/test_body_style.py`, `tests/unit/test_roundtrip_fidelity.py`.
+
 ## [0.5.6] - 2025-11-19
 
 ### Added

@@ -27,7 +27,7 @@ class SymbolParser(BaseElementParser):
     def _parse_symbol(self, item: List[Any]) -> Optional[Dict[str, Any]]:
         """Parse a symbol (component) definition."""
         try:
-            symbol_data = {
+            symbol_data: Dict[str, Any] = {
                 "lib_id": None,
                 # Optional (lib_name "...") preceding lib_id for symbols whose
                 # library definition was renamed/derived (e.g. "GND_3"). None
@@ -100,9 +100,7 @@ class SymbolParser(BaseElementParser):
                     symbol_data["unit"] = int(sub_item[1]) if len(sub_item) > 1 else 1
                 elif element_type == "body_style":
                     # Parse DeMorgan/alternate body style (KiCAD 10+)
-                    symbol_data["body_style"] = (
-                        int(sub_item[1]) if len(sub_item) > 1 else 1
-                    )
+                    symbol_data["body_style"] = int(sub_item[1]) if len(sub_item) > 1 else 1
                 elif element_type == "property":
                     prop_data = self._parse_property(sub_item)
                     if prop_data:

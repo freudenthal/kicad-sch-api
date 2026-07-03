@@ -43,7 +43,7 @@ def _roundtrip_symbol(sexp_str):
 def test_mirror_preserved():
     out = _roundtrip_symbol(
         '(symbol (lib_id "Device:C") (at 10 10 0) (mirror x) (unit 1) '
-        '(exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) '
+        "(exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) "
         '(uuid "11111111-1111-1111-1111-111111111111"))'
     )
     tags = _tag(out)
@@ -62,7 +62,7 @@ def test_mirror_absent_not_emitted():
 def test_exclude_from_sim_and_dnp_preserved():
     out = _roundtrip_symbol(
         '(symbol (lib_id "Device:C") (at 10 10 0) (unit 1) '
-        '(exclude_from_sim yes) (in_bom no) (on_board yes) (dnp yes) '
+        "(exclude_from_sim yes) (in_bom no) (on_board yes) (dnp yes) "
         '(uuid "11111111-1111-1111-1111-111111111111"))'
     )
     assert str(_sym_field(out, "exclude_from_sim")[1]) == "yes"
@@ -99,13 +99,13 @@ def test_fields_autoplaced_only_emitted_when_true():
 
 def test_sheet_property_and_fill_preserved():
     sheet_sexp = sexpdata.loads(
-        '(sheet (at 100 100) (size 20 20) '
-        '(stroke (width 0.1524) (type solid)) (fill (color 0 0 0 0)) '
+        "(sheet (at 100 100) (size 20 20) "
+        "(stroke (width 0.1524) (type solid)) (fill (color 0 0 0 0)) "
         '(uuid "22222222-2222-2222-2222-222222222222") '
         '(property "Sheetname" "Sub" (at 100 99 0) (show_name no) '
-        '(do_not_autoplace no) (effects (font (size 1.27 1.27)))) '
+        "(do_not_autoplace no) (effects (font (size 1.27 1.27)))) "
         '(property "Sheetfile" "sub.kicad_sch" (at 100 121 0) '
-        '(effects (font (size 1.27 1.27)))))'
+        "(effects (font (size 1.27 1.27)))))"
     )
     p = SheetParser()
     out = p._sheet_to_sexp(p._parse_sheet(sheet_sexp), "root")
@@ -216,7 +216,12 @@ def test_sections_emitted_in_kicad_order():
         "paper": "A4",
         "lib_symbols": {},
         "components": [
-            {"lib_id": "Device:R", "position": Point(100.0, 100.0), "reference": "R1", "value": "1k"}
+            {
+                "lib_id": "Device:R",
+                "position": Point(100.0, 100.0),
+                "reference": "R1",
+                "value": "1k",
+            }
         ],
         "wires": [{"points": [{"x": 0, "y": 0}, {"x": 1, "y": 1}], "uuid": "w"}],
         "junctions": [{"position": {"x": 0, "y": 0}, "uuid": "j"}],
