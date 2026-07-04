@@ -6,7 +6,9 @@ Provides schematic management and pin discovery tools via the Model Context Prot
 """
 
 import logging
+import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -352,24 +354,55 @@ mcp.tool()(manage_hierarchical_labels)  # HierarchicalLabels: add, remove
 # ========== Server Entry Point ==========
 
 
+def _dist_version(dist_name: str) -> str:
+    """Best-effort installed version of a distribution (never raises)."""
+    try:
+        from importlib.metadata import version
+
+        return version(dist_name)
+    except Exception:
+        return "unknown"
+
+
 def main() -> None:
     """
     Main entry point for the MCP server.
 
     Starts the FastMCP server with STDIO transport for Claude Desktop integration.
     """
-    logger.info("Starting kicad-sch-api MCP server...")
-    logger.info(f"kicad-sch-api version: {ksa.__version__}")
+    # Startup banner to stderr: identifies the process so that a later death is
+    # diagnosable. The client log otherwise only shows "transport closed
+    # unexpectedly" with no Python/version/pid context.
+    logger.info(
+        "Starting kicad-sch-api MCP server | "
+        "kicad_sch_api=%s fastmcp=%s mcp=%s | python=%s pid=%s cwd=%s",
+        getattr(ksa, "__version__", None) or _dist_version("kicad-sch-api"),
+        _dist_version("fastmcp"),
+        _dist_version("mcp"),
+        sys.version.split()[0],
+        os.getpid(),
+        os.getcwd(),
+    )
 
+    exit_reason = "clean return from mcp.run (client closed the transport)"
     try:
         # Run the MCP server with STDIO transport
         mcp.run(transport="stdio")
     except KeyboardInterrupt:
+        exit_reason = "interrupted (KeyboardInterrupt)"
         logger.info("Server shutdown requested")
         sys.exit(0)
     except Exception as e:
+        # exc_info=True prints the full traceback: often the only record of why
+        # the process exited.
+        exit_reason = f"unhandled {type(e).__name__}: {e}"
         logger.error(f"Server error: {e}", exc_info=True)
         sys.exit(1)
+    finally:
+        # Always leave a breadcrumb. A normal return here (transport closed by
+        # the client, or an external kill that unwinds the stack) is otherwise
+        # silent and indistinguishable from a crash in the client log.
+        logger.info("kicad-sch-api MCP server exiting: %s", exit_reason)
 
 
 if __name__ == "__main__":
