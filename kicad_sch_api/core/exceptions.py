@@ -48,6 +48,21 @@ class ValidationError(KiCadSchError):
         self.value = value
         super().__init__(message)
 
+    def __str__(self) -> str:
+        """Include the first few issue messages so the error is actionable.
+
+        "Cannot save schematic with validation errors" alone hides which refs
+        failed; append them (e.g. the offending "Rf1") so callers don't need a
+        debugger to see the cause.
+        """
+        base = super().__str__()
+        if not self.issues:
+            return base
+        shown = self.issues[:5]
+        details = "; ".join(str(getattr(i, "message", i)) for i in shown)
+        more = "" if len(self.issues) <= 5 else f" (+{len(self.issues) - 5} more)"
+        return f"{base}: {details}{more}"
+
     def add_issue(self, issue: "ValidationIssue") -> None:
         """Add a validation issue to this error."""
         self.issues.append(issue)

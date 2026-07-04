@@ -81,7 +81,15 @@ class SchematicValidator:
         """
         self.strict = strict
         self.issues = []
-        self._valid_reference_pattern = re.compile(r"^(#[A-Z]+[0-9]+|[A-Z]+[0-9]*[A-Z]?|[A-Z]+\?)$")
+        # Accept lowercase letters in the prefix (e.g. "Rf1", "Cin2"). KiCad 10
+        # itself allows these -- the GUI accepts them and kicad-cli processes a
+        # schematic bearing an "Rf1" ref without complaint -- so validate-on-save
+        # must not be stricter than KiCad (this rejected common EE notation and
+        # aborted circuit-synth update-mode regeneration). KiCad is the arbiter;
+        # we deliberately do NOT try to enforce IEEE-315 style here.
+        self._valid_reference_pattern = re.compile(
+            r"^(#[A-Za-z]+[0-9]+|[A-Za-z]+[0-9]*[A-Za-z]?|[A-Za-z]+\?)$"
+        )
         self._valid_lib_id_pattern = re.compile(r"^[^:]+:[^:]+$")
 
     def validate_schematic_data(self, schematic_data: Dict[str, Any]) -> List[ValidationIssue]:
@@ -127,7 +135,8 @@ class SchematicValidator:
         Validate component reference format.
 
         Args:
-            reference: Reference to validate (e.g., "R1", "U5", "#PWR01")
+            reference: Reference to validate (e.g., "R1", "U5", "#PWR01",
+                "Rf1" -- lowercase prefixes are valid, KiCad accepts them)
 
         Returns:
             True if reference is valid
