@@ -291,6 +291,11 @@ class TextElementManager(BaseManager):
         if stroke_width is None:
             stroke_width = 0
 
+        if font_size is None:
+            # A None here would serialize as "(size None None)", which no longer
+            # parses. Fall back to the standard schematic text size.
+            font_size = 1.27
+
         # Build text_box_data matching parser format
         text_box_data = {
             "uuid": uuid_str,

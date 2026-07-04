@@ -694,13 +694,14 @@ async def manage_text_boxes(
             if ctx:
                 await ctx.report_progress(0, 100, "Adding text box")
 
-            text_box_uuid = schematic.add_text_box(
-                text=text,
-                position=position,
-                size=size,
-                rotation=rotation,
-                font_size=font_size,
+            # Only forward font_size when the caller gave one, so the library's
+            # default applies instead of a None (which serializes unparseably).
+            text_box_kwargs = dict(
+                text=text, position=position, size=size, rotation=rotation
             )
+            if font_size is not None:
+                text_box_kwargs["font_size"] = font_size
+            text_box_uuid = schematic.add_text_box(**text_box_kwargs)
 
             if ctx:
                 await ctx.report_progress(100, 100, "Text box added")
