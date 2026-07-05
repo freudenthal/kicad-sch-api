@@ -113,6 +113,27 @@ class Schematic:
         ]
         self._components = ComponentCollection(component_symbols, parent_schematic=self)
 
+        # When loading an existing file (no explicit name given), adopt the project
+        # name its component instances already use. Otherwise self.name keeps the
+        # "simple_circuit" default, so any component added to the loaded schematic is
+        # serialized with (instances (project "simple_circuit" ...)) while the file's
+        # own symbols carry a different project name (e.g. "" from circuit-synth).
+        # That inconsistent instances table loads but crashes KiCad on save and
+        # corrupts the file. Match the file so added components stay consistent.
+        if name is None:
+            from collections import Counter
+
+            projects = Counter(
+                inst.project
+                for comp in component_symbols
+                for inst in (getattr(comp, "instances", None) or [])
+                if inst.project is not None
+            )
+            if projects:
+                detected = projects.most_common(1)[0][0]
+                self.name = detected
+                self._parser.project_name = detected
+
         # Record the lib_ids that had placed components at load time. Used when
         # syncing lib_symbols on save to prune only definitions whose last
         # component was removed, while preserving "shipped extra" definitions
