@@ -807,12 +807,30 @@ class Schematic:
             pin2_number: Second component pin number
 
         Returns:
-            Wire UUID or None if either pin not found
+            Wire UUID, or None if either pin is not found or the two pins coincide.
         """
         pin1_pos = self.get_component_pin_position(component1_ref, pin1_number)
         pin2_pos = self.get_component_pin_position(component2_ref, pin2_number)
 
         if pin1_pos is None or pin2_pos is None:
+            return None
+
+        # A wire whose endpoints coincide is degenerate: KiCad loads it but crashes
+        # on save and corrupts the file. This happens when two pins sit at the same
+        # point -- e.g. a multi-pad sensor's redundant/stacked pads (the SiPM's TSV
+        # pins) that share a net. Such pins are already electrically coincident, so a
+        # zero-length wire adds nothing; refuse to create it.
+        if abs(pin1_pos.x - pin2_pos.x) < 1e-6 and abs(pin1_pos.y - pin2_pos.y) < 1e-6:
+            logger.warning(
+                "Skipping zero-length wire: %s pin %s and %s pin %s are at the same "
+                "point (%.4f, %.4f)",
+                component1_ref,
+                pin1_number,
+                component2_ref,
+                pin2_number,
+                pin1_pos.x,
+                pin1_pos.y,
+            )
             return None
 
         return self.add_wire(pin1_pos, pin2_pos)
