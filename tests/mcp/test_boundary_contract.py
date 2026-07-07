@@ -4,7 +4,7 @@ The kicad-sch-api MCP server (`mcp_server/`, the server Claude Desktop actually
 connects to) is the *language-agnostic* editing surface of the design loop — it
 operates on `.kicad_sch` files via kicad-sch-api and must never depend on the
 circuit_synth DSL. Keeping it clean is what lets a future DSL swap (e.g. SKiDL)
-reuse it untouched. Canonical contract: `workingdocs/loop-boundary-contract.md`
+reuse it untouched. Canonical contract: `workingdocs/design_considerations/loop-boundary-contract.md`
 (in the sibling `circ-synth/` working tree), rule R1.
 
 Pure file read; fast; dependency-free.

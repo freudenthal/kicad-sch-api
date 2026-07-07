@@ -13,7 +13,7 @@ kicad-sch-api is a Python library for reading and writing KiCAD schematic files.
 `mcp_server/` (the server Claude Desktop connects to) is the **language-agnostic**
 editing surface of the circuit-synth design loop: it operates on `.kicad_sch` files
 via this library and **must never import or reference `circuit_synth`** (rule R1 of
-the cross-repo `workingdocs/loop-boundary-contract.md`, in the sibling `circ-synth/`
+the cross-repo `workingdocs/design_considerations/loop-boundary-contract.md`, in the sibling `circ-synth/`
 tree). Keeping it clean is what lets a future DSL swap reuse it untouched. Enforced
 by `tests/mcp/test_boundary_contract.py`.
 
